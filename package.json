@@ -1,0 +1,35 @@
+{
+  "name": "dsh-slim",
+  "version": "1.0.0",
+  "description": "DSH 会话精简插件：加号菜单一键删废话/去重合并，剪完自动关窗重开，带落盘前自检与备份回滚。",
+  "type": "module",
+  "main": "index.js",
+  "license": "MIT",
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "plugin",
+    "session",
+    "context",
+    "token",
+    "prune",
+    "compact"
+  ],
+  "files": [
+    "index.js",
+    "cordis.patch.yml",
+    "locale",
+    "icon.svg",
+    "tools",
+    "README.md",
+    "LICENSE"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
