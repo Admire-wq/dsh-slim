@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Slim Button (dsh-slim)",
+    "description": "Adds /slim and /slimdeep to the composer plus-menu: closes DSH, deletes redundant turns of this conversation, then reopens it."
+  }
+}
