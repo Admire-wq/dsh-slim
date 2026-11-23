@@ -3,13 +3,13 @@
     ---------------------------------------------------------------
     用途：安全重启 DeepSeek Harness 桌面版（Windows）。
     探测得到的启动真相（2026-11-22 只读探测，绝对路径，勿改）：
-      桌面窗口主进程 : E:\dsh-plugins\dsh-bili-whale\dsh\DeepSeek Harness.exe
-      启动入口       : C:\Users\mwwr\Desktop\DeepSeek Harness.lnk
-                       TargetPath = E:\dsh-plugins\dsh-bili-whale\dsh\DeepSeek Harness.exe
+      桌面窗口主进程 : <自动探测>\DeepSeek Harness.exe
+      启动入口       : <用户桌面>\DeepSeek Harness.lnk
+                       TargetPath = <快捷方式解出的 exe>
                        Arguments  = (空)
-                       WorkDir    = E:\dsh-plugins\dsh-bili-whale\dsh
+                       WorkDir    = <exe 所在目录>
       Web GUI 端口   : 127.0.0.1:54626，由主进程派生的 host 子进程监听
-      附属子进程     : C:\Users\mwwr\.dsh\electron\electron.exe（dsh-pet 桌宠窗口，父为 host）
+      附属子进程     : <用户目录>\.dsh\electron\electron.exe（dsh-pet 桌宠窗口，父为 host）
     说明：主进程不带任何参数启动，内部再拉起 host（node index.js）与桌宠 electron。
           因此重启必须"杀掉整棵树"再按 lnk 的 TargetPath + Arguments 重新拉起。
 
@@ -72,13 +72,27 @@ Set-StrictMode -Off
 $ErrorActionPreference = 'Continue'
 
 # ============================ 常量：绝对路径 ============================
-$DesktopExePath = 'E:\dsh-plugins\dsh-bili-whale\dsh\DeepSeek Harness.exe'
-$DesktopWorkDir = 'E:\dsh-plugins\dsh-bili-whale\dsh'
+# 自动探测：桌面 / 开始菜单里的快捷方式 → 解出 exe 路径与工作目录。
+# 也可用环境变量 DSH_EXE_PATH 覆盖。
 $DesktopExeName = 'DeepSeek Harness.exe'
 $DesktopLnkList = @(
-    'C:\Users\mwwr\Desktop\DeepSeek Harness.lnk',
-    'C:\Users\mwwr\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\DeepSeek Harness.lnk'
+    (Join-Path $env:USERPROFILE 'Desktop\DeepSeek Harness.lnk'),
+    (Join-Path $env:APPDATA 'Microsoft\Windows\Start Menu\Programs\DeepSeek Harness.lnk')
 )
+function Resolve-DesktopExe {
+    if ($env:DSH_EXE_PATH -and (Test-Path -LiteralPath $env:DSH_EXE_PATH)) { return $env:DSH_EXE_PATH }
+    foreach ($lnk in $DesktopLnkList) {
+        if (-not (Test-Path -LiteralPath $lnk)) { continue }
+        try {
+            $sh = New-Object -ComObject WScript.Shell
+            $sc = $sh.CreateShortcut($lnk)
+            if ($sc.TargetPath -and (Test-Path -LiteralPath $sc.TargetPath)) { return [string]$sc.TargetPath }
+        } catch { }
+    }
+    return ''
+}
+$DesktopExePath = Resolve-DesktopExe
+$DesktopWorkDir = if ($DesktopExePath) { Split-Path -Parent $DesktopExePath } else { '' }
 
 # 永不杀的进程特征（防御性白名单）
 $NeverKillPathLike = @('F:\node.exe')
@@ -502,8 +516,8 @@ if ($leftPort.Count -gt 0) {
 # ---- 5b. 剪会话（DSH 已经死了，此时写文件不会被活会话覆盖）----
 if (-not [string]::IsNullOrWhiteSpace($PruneSession)) {
     Write-Log -Text '--- STEP 4b: pruning session while DSH is down ---'
-    $nodeExe = 'C:\Users\mwwr\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe'
-    $pruneCli = 'E:\dsh-plugins\qq-bridge-main\state\agents\session-tools\dsh-prune.mjs'
+    $nodeExe = if ($env:DSH_PRUNE_NODE) { $env:DSH_PRUNE_NODE } else { (Get-Command node -ErrorAction SilentlyContinue).Source }
+    $pruneCli = if ($env:DSH_PRUNE_CLI) { $env:DSH_PRUNE_CLI } else { Join-Path $PSScriptRoot 'dsh-prune.mjs' }
     if (-not (Test-Path -LiteralPath $nodeExe)) {
         Write-Log -Level ERROR -Text ('  node not found: ' + $nodeExe + ' -- skip prune, session untouched')
     } elseif (-not (Test-Path -LiteralPath $pruneCli)) {
