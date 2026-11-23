@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="slim conversation">
+  <rect x="4" y="4" width="56" height="56" rx="14" fill="#1f6feb"/>
+  <rect x="14" y="17" width="36" height="6" rx="3" fill="#ffffff" opacity="0.55"/>
+  <rect x="14" y="29" width="26" height="6" rx="3" fill="#ffffff" opacity="0.8"/>
+  <rect x="14" y="41" width="14" height="6" rx="3" fill="#ffffff"/>
+  <path d="M44 38l6 6 6-6" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round" transform="translate(-4 2)"/>
+</svg>
