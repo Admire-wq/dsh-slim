@@ -18,12 +18,15 @@
 import { spawn, spawnSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-const RESTART_SCRIPT = process.env.DSH_PRUNE_RESTART || 'F:/dsh-plugins/restart-dsh.ps1';
-const PRUNE_CLI = process.env.DSH_PRUNE_CLI || 'E:/dsh-plugins/qq-bridge-main/state/agents/session-tools/dsh-prune.mjs';
-const NODE_EXE = process.env.DSH_PRUNE_NODE || 'C:/Users/mwwr/.dsh/dsh-runtimes/dsh-primary-runtime/dependencies/node/bin/node.exe';
-const WORK_DIR = process.env.DSH_PRUNE_WORKDIR || 'E:/dsh-plugins/qq-bridge-main/state/agents/media-tmp';
+// 路径全部可用环境变量覆盖；默认值相对本包位置推导，不含任何本机用户名或盘符。
+const HERE = dirname(fileURLToPath(import.meta.url));
+const RESTART_SCRIPT = process.env.DSH_PRUNE_RESTART || join(HERE, 'tools', 'restart-dsh.ps1');
+const PRUNE_CLI = process.env.DSH_PRUNE_CLI || join(HERE, 'tools', 'dsh-prune.mjs');
+const NODE_EXE = process.env.DSH_PRUNE_NODE || process.execPath;
+const WORK_DIR = process.env.DSH_PRUNE_WORKDIR || join(tmpdir(), 'dsh-slim');
 const POWERSHELL = 'powershell.exe';
 const DELAY_SECONDS = '4';
 const DEFAULT_KEEP_RECENT = '12';
