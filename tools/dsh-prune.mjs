@@ -10,7 +10,7 @@
  *   事件）再重编号，是唯一既安全又能保住语义的粒度。
  *
  * 用法（推荐用 dsh 自带的 node，版本较新、带 zstd）：
- *   NODE="C:\Users\mwwr\.dsh\dsh-runtimes\dsh-primary-runtime\dependencies\node\bin\node.exe"
+ *   NODE="<node 可执行文件路径>"   # 需要带 zstd 支持的 Node ≥ 22
  *
  *   $NODE dsh-prune.mjs list                 # 列出所有会话（按修改时间倒序）
  *   $NODE dsh-prune.mjs show <会话id|目录>    # 看轮次表：第几轮、时间、用户说了啥、约多少 token
