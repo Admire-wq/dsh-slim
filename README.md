@@ -55,9 +55,9 @@ plugin_manager install_bundle  <本仓库绝对路径>
 | `DSH_PRUNE_RESTART` | 重启脚本 | `F:/dsh-plugins/restart-dsh.ps1` |
 | `DSH_PRUNE_CLI` | 剪枝 CLI | `E:/…/session-tools/dsh-prune.mjs` |
 | `DSH_PRUNE_NODE` | node 可执行文件 | DSH 运行时里的 node.exe |
-| `DSH_PRUNE_WORKDIR` | 摘要/待办输出目录 | `E:/…/media-tmp` |
+| `DSH_PRUNE_WORKDIR` | 摘要/待办输出目录 | `%TEMP%/dsh-slim` |
 
-`tools/restart-dsh.ps1` 里还有三处需要按你的机器改：桌面 exe 路径、工作目录、Web GUI 端口。
+`tools/restart-dsh.ps1` 会自动从桌面快捷方式解出 exe 与工作目录（也可用 `DSH_EXE_PATH` 覆盖）；Web GUI 端口默认在启动后自动探测，不写死。
 
 ---
 
