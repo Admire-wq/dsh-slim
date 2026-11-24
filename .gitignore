@@ -2,3 +2,4 @@ node_modules/
 *.log
 media-tmp/
 .DS_Store
+.npmrc
