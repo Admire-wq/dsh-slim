@@ -1,19 +1,20 @@
 {
   "name": "dsh-slim",
   "version": "1.0.0",
-  "description": "DSH 会话精简插件：加号菜单一键删废话/去重合并，剪完自动关窗重开，带落盘前自检与备份回滚。",
+  "description": "DSH (DeepSeek Harness) 会话一键瘦身插件：加号菜单删废话/去重合并，剪完自动重启，带落盘前自检与备份回滚。",
   "type": "module",
   "main": "index.js",
   "license": "MIT",
   "keywords": [
     "dsh",
+    "deepseek",
     "deepseek-harness",
     "plugin",
     "session",
-    "context",
-    "token",
     "prune",
-    "compact"
+    "compact",
+    "context",
+    "token"
   ],
   "files": [
     "index.js",
@@ -31,5 +32,17 @@
   },
   "engines": {
     "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Admire-wq/dsh-slim.git"
+  },
+  "homepage": "https://github.com/Admire-wq/dsh-slim#readme",
+  "bugs": {
+    "url": "https://github.com/Admire-wq/dsh-slim/issues"
+  },
+  "author": "Admire-wq",
+  "publishConfig": {
+    "access": "public"
   }
 }
