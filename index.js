@@ -181,19 +181,20 @@ function launch(agentId, pruneArgs) {
   if (!existsSync(RESTART_SCRIPT)) throw new Error(`找不到执行器 ${RESTART_SCRIPT}`);
   // 绝对不要加 detached:true：Windows 的 DETACHED_PROCESS 让 powershell 5.1 拿不到控制台，
   // 会立刻 exit 0 掉，脚本一行都不执行（2026-11-22 23:05 实测）。脱离进程树靠脚本自己的 WMI 搬迁。
-  const child = spawn(
-    POWERSHELL,
-    [
-      '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden',
-      '-File', RESTART_SCRIPT,
-      '-Force', '-DelaySeconds', DELAY_SECONDS,
-      '-PruneSession', String(agentId),
-      '-PruneArgs', pruneArgs,
-    ],
-    { stdio: 'ignore', windowsHide: true },
-  );
-  child.unref();
-  return child.pid;
+  // 2026-11-25 实测：spawn 出去的重启器仍留在 Electron 的 job object 里，剪枝进程一退
+  // job 关闭就把它带走，DSH 根本没重启（日志停在 STEP 1c）。改由 WMI 服务创建进程，
+  // 父进程是 WmiPrvSE，不在 DSH 树里，杀树带不走它。
+  const cmdLine = `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "${RESTART_SCRIPT}" -Force -DelaySeconds ${DELAY_SECONDS} -PruneSession "${agentId}" -PruneArgs "${pruneArgs}"`;
+  const psCmd = `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${cmdLine}'}; if ($r.ReturnValue -ne 0) { throw ('WMI create failed: ' + $r.ReturnValue) }; $r.ProcessId`;
+  const launched = spawnSync(POWERSHELL, ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-Command', psCmd], {
+    encoding: 'utf8',
+    windowsHide: true,
+    timeout: 30_000,
+  });
+  const outText = `${launched.stdout || ''}${launched.stderr || ''}`.trim();
+  if (launched.status !== 0) throw new Error(outText || `powershell 退出码 ${launched.status}`);
+  const pid = outText.split(/\s+/).filter(Boolean).pop();
+  return pid;
 }
 
 function fmtTokens(n) {

@@ -755,7 +755,72 @@ async function cmdPrune() {
     keptEvents.push(clone);
   }
 
+  // ⑥ inbox 重放收敛（2026-11-25 血案）：
+  //   剪枝会留下「删待处理队列消息」的 agent/inbox/spliced，而把消息塞进队列的那条
+  //   已经在被删的轮次里没了。重放时 start+removedCount 越界，官方 projection 直接抛
+  //   "invalid persisted inbox splice at session seq N"，整个会话打不开——而格式校验
+  //   （seq/turn/step/tool 配对）全是绿的，查不出来。
+  //   这里按 seq 顺序重放 inbox，把越界的 splice 收敛成合法范围，inserted 原样保留。
+  {
+    const inboxState = { "next-turn": [], "next-step": [] };
+    const msgKey = (m) => (m && typeof m === "object" ? (m.id ?? JSON.stringify(m).slice(0, 40)) : String(m));
+    for (const event of keptEvents) {
+      if (event.type !== "agent/inbox/spliced" || !event.data) continue;
+      const splice = event.data;
+      const inbox = inboxState[splice.target];
+      if (!Array.isArray(inbox)) continue;
+      const before = { start: splice.start, removedCount: splice.removedCount ?? 0 };
+      let changed = false;
+      if (!Number.isSafeInteger(splice.start) || splice.start < 0) { splice.start = 0; changed = true; }
+      if (splice.start > inbox.length) { splice.start = inbox.length; changed = true; }
+      if (!Number.isSafeInteger(splice.removedCount) || splice.removedCount < 0) { splice.removedCount = 0; changed = true; }
+      if (splice.start + (splice.removedCount ?? 0) > inbox.length) {
+        splice.removedCount = Math.max(0, inbox.length - splice.start);
+        changed = true;
+      }
+      if (!Array.isArray(splice.inserted)) { splice.inserted = []; changed = true; }
+      // 先按 splice 语义把该删的删掉，再看 inserted 是否与「剩下的 pending」撞 id
+      const rest = inbox.slice();
+      rest.splice(splice.start, splice.removedCount ?? 0);
+      const other = splice.target === "next-turn" ? inboxState["next-step"] : inboxState["next-turn"];
+      const pendingIds = new Set([...other, ...rest].map(msgKey));
+      const keptInserted = [];
+      for (const message of splice.inserted) {
+        const k = msgKey(message);
+        if (pendingIds.has(k)) { changed = true; continue; }
+        pendingIds.add(k);
+        keptInserted.push(message);
+      }
+      if (keptInserted.length !== splice.inserted.length) splice.inserted = keptInserted;
+      const spliced = inbox.slice();
+      spliced.splice(splice.start, splice.removedCount ?? 0, ...splice.inserted);
+      inboxState[splice.target] = spliced;
+      if (before.start !== splice.start || before.removedCount !== (splice.removedCount ?? 0)) {
+        warnings.push(`seq ${event.seq} 的 inbox splice 指向了已被删掉的待处理消息（${JSON.stringify(before)} → ${JSON.stringify({ start: splice.start, removedCount: splice.removedCount ?? 0 })}），已收敛`);
+      }
+    }
+    const left = inboxState["next-turn"].length + inboxState["next-step"].length;
+    if (left > 0) {
+      // 剪枝删的是整轮历史，队列里剩下的这些基本是被删轮次里没跑完的定时提醒/半句话
+      // （2026-11-25 d8d8d648 残留 87 条）。留着它们，会话一打开就顶着一堆待处理输入，
+      // 用户一说话就可能被一起消费掉。所以剪完顺手清空，并明说清了多少条。
+      let seq = keptEvents[keptEvents.length - 1].seq;
+      for (const target of ["next-turn", "next-step"]) {
+        const n = inboxState[target].length;
+        if (n === 0) continue;
+        keptEvents.push({
+          type: "agent/inbox/spliced",
+          time: Date.now(),
+          seq: seq += 1,
+          data: { target, start: 0, removedCount: n, inserted: [] },
+        });
+      }
+      warnings.push(`剪完清空了 ${left} 条残留待处理输入（被删轮次里没跑完的定时提醒等）`);
+    }
+  }
+
   const errors = validate(keptEvents, baseSeq);
+
   const droppedTurns = turnPlan.filter((p) => !p.keep);
   const droppedTokens = droppedTurns.reduce((sum, p) => sum + p.summary.tokens, 0);
   const totalTokens = turnPlan.reduce((sum, p) => sum + p.summary.tokens, 0);
@@ -814,6 +879,9 @@ async function cmdPrune() {
     if (check.tornStart !== undefined) throw new Error(`容器尾部有残帧（字节 ${check.tornStart}）`);
     if (!check.frames.length) throw new Error("没有任何帧");
     const headerText = zstdDecompressSync(out.subarray(check.frames[0].start, check.frames[0].end)).toString("utf8");
+    // 第一帧必须"恰好一行 header"：DSH 枚举会话列表时用 readFirstZstdLine + assertZstdHeaderFrame
+    // 卡这个，多一行就判 corrupt，整条会话从列表里消失（2026-11-25 d8d8d648 就是这么没的）。
+    if (headerText.indexOf("\n") !== headerText.length - 1) throw new Error("第一帧不是恰好一行 header（会被列表枚举判 corrupt）");
     JSON.parse(headerText.split("\n")[0]);
     for (let i = 1; i < check.frames.length; i++) {
       const plain = zstdDecompressSync(out.subarray(check.frames[i].start, check.frames[i].end));
@@ -859,13 +927,16 @@ async function cmdPrune() {
       try {
         // 注意：不能加 detached——Windows 的 DETACHED_PROCESS 会让 powershell 5.1
         // 拿不到控制台直接 exit 0。脱离进程树靠脚本自己的 WMI 搬迁。
-        const child = spawn(
-          "powershell.exe",
-          ["-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", script, "-Force", "-DelaySeconds", "3"],
-          { stdio: "ignore", windowsHide: true },
-        );
-        child.unref();
-        console.log(`\n重启已排队：3 秒后关掉 DSH，重开时就是剪好的会话（进程 ${child.pid}）。`);
+        // 2026-11-25 实测：从会话里 spawn 出去的 powershell 仍挂在 Electron 的 job object 里，
+        // 剪枝进程一退出 job 关闭，重启器就被一起带走——日志只写到 STEP 1c 就断，DSH 根本没重启。
+        // 必须让 WMI 服务（WmiPrvSE）来创建进程，父进程在树外，杀树带不走它。
+        const cmdLine = `powershell.exe -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File "${script}" -Force -DelaySeconds 3`;
+        const psCmd = `$r = Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine='${cmdLine}'}; if ($r.ReturnValue -ne 0) { throw ('WMI create failed: ' + $r.ReturnValue) }; $r.ProcessId`;
+        const launched = spawnSync("powershell.exe", ["-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", psCmd], { encoding: "utf8", windowsHide: true, timeout: 30000 });
+        const outText = `${launched.stdout || ""}${launched.stderr || ""}`.trim();
+        if (launched.status !== 0) throw new Error(outText || `powershell 退出码 ${launched.status}`);
+        const newPid = outText.split(/\s+/).filter(Boolean).pop();
+        console.log(`\n重启已排队（WMI 拉起，进程 ${newPid}，已在 DSH 进程树外）：3 秒后关掉 DSH，重开时就是剪好的会话。`);
         console.log("要看进度：F:\\dsh-backups\\dsh-restart-*.log");
       } catch (error) {
         console.log(`\n⚠ 没能拉起重启脚本：${error.message}；这次改动要手动重启 DSH 才生效。`);

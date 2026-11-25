@@ -106,10 +106,13 @@ node tools/dsh-prune.mjs export <id> --out x.jsonl  # 导出明文事件流
 
 任何一条不过 → **拒绝落盘，原文件一个字节不动**。每次写盘前自动备份 `session.v4.jsonl.zstd.prune-bak-<时间戳>`，`restore` 可整条退回。
 
-两个真实踩坑，已内置修复：
+几个真实踩坑，已内置修复：
 
 - **区间引用塌缩**：rewind 型替换事件的 `sourceEventSeqs` 里夹着区间（`[[999,1003],1005]`），只按数字映射会让两个端点撞成同一个值，DSH 报 `duplicate sourceEventSeqs ranges`。现在统一展开成去重后的单值列表。
 - **反斜杠吞字符**：Windows 路径写进 JS 字符串时 `\r`、`\d` 会被当转义，路径悄悄变成错的。本项目路径一律用正斜杠。
+- **第一帧必须是「恰好一行 header」**（1.0.2）：DSH 枚举会话列表走 `readFirstZstdLine` + `assertZstdHeaderFrame`，第一帧多一行就判 corrupt，会话整条从左侧列表里消失——而完整加载器把帧全解开再拼，照样 PASS，肉眼与常规校验都看不出来。现在写盘自检里加了这条断言，只允许 `header + "\n"` 单独一帧。
+- **孤儿 inbox splice**（1.0.2）：剪枝删掉了「把消息塞进待处理队列」的事件，却留下「从队列里删消息」的 `agent/inbox/spliced`，重放时 `start + removedCount` 越界，加载器抛 `invalid persisted inbox splice at session seq N`，会话打不开（而 seq/turn/step/tool 配对全绿）。现在剪枝会按顺序重放 inbox、把越界 splice 收敛成合法范围，并把残留的待处理输入一并清空（那些多是被删轮次里没跑完的定时提醒）。
+- **会话内 spawn 的重启器会被一起杀掉**（1.0.2）：从会话里 `spawn` 出去的 powershell 仍挂在 Electron 的 job object 里，剪枝进程一退、job 关闭就被带走，重启日志只写到 `STEP 1c` 就断，DSH 其实没重启。现在改由 WMI（`Win32_Process.Create`）创建重启进程，父进程是 `WmiPrvSE`，杀树带不走它。
 
 ---
 
