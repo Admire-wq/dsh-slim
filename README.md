@@ -115,6 +115,7 @@ node tools/dsh-prune.mjs export <id> --out x.jsonl  # 导出明文事件流
 - **会话内 spawn 的重启器会被一起杀掉**（1.0.2）：从会话里 `spawn` 出去的 powershell 仍挂在 Electron 的 job object 里，剪枝进程一退、job 关闭就被带走，重启日志只写到 `STEP 1c` 就断，DSH 其实没重启。现在改由 WMI（`Win32_Process.Create`）创建重启进程，父进程是 `WmiPrvSE`，杀树带不走它。
 - **投影缓存里的旧游标会把文件写坏**（1.0.3）：`~/.dsh/storages/session_projcache/sessions/<id>.json` 记着上次折叠到哪条事件（`contextHeaders.seq`）。剪枝把 seq 重编号之后，DSH 若带着旧游标续写，新事件会按旧编号接在文件尾部，立刻变成「新编号 + 旧编号」两截，加载器报 `seq gap`。现在剪完自动作废该会话的投影缓存（下次打开自动重建，标题短暂显示「未命名」属正常）。
 - **DSH 还在跑的时候剪枝，必然写坏**（1.0.5）：活会话内存里拿着旧的 `lastSeq`，剪完它会接着按旧编号追加，文件立刻两截。2026-11-26 同一个会话连坏三次都是这个原因。现在 `prune` 写盘前先查 `DeepSeek Harness.exe` 是否在跑，在跑就直接拒绝写盘（原文件一个字节不动），只提示改用「排重启 → 先停 DSH → 再剪 → 再拉起」；确实需要在运行中剪再加 `--force-live`。
+- **受保护的系统提示头**（1.0.6）：加载器规定 `system/message` 只能作为 surface 的第一条。剪枝如果把它连同所在轮次一起删掉，后面再出现的 `system/message` 就成了孤儿，报 `system/message requires a protected first surface head`，会话直接打不开。现在构建阶段就会丢掉这类孤儿（运行时下次请求会自动重建系统提示）。
 
 ---
 

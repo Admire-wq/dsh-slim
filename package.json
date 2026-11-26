@@ -1,6 +1,6 @@
 {
   "name": "dsh-slim",
-  "version": "1.0.5",
+  "version": "1.0.6",
   "description": "DSH (DeepSeek Harness) 会话一键瘦身插件：加号菜单删废话/去重合并，剪完自动重启，带落盘前自检与备份回滚。",
   "type": "module",
   "main": "index.js",

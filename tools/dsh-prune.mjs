@@ -727,6 +727,8 @@ async function cmdPrune() {
   // ⑤ 克隆 + 重映射
   const keptEvents = [];
   const warnings = [];
+  let surfaceSeen = 0;
+  let protectedHeadFound = false;
   for (const [idx, reason] of droppedReplace) warnings.push(`丢弃替换型事件 ${reason}，下次请求时运行时会自动重建它`);
   for (const idx of finalIdx) {
     const row = rows[idx];
@@ -751,6 +753,22 @@ async function cmdPrune() {
       clone.surfaceOp = "append";
       delete clone.sourceEventSeqs;
       warnings.push(`seq ${row.obj.seq} 的压缩检查点失去了配套 compaction 事件，已降级为普通消息（历史原文保留）`);
+    }
+    // protected first surface head（2026-11-26 e13b4896）：
+    // DSH 要求 system/message 只能作为 surface 的第一条（protectedHead）。剪枝如果把最初那条
+    // system/message 连同它所在的轮次一起删掉，后面再出现的 system/message 就成了孤儿，
+    // 加载器直接报 "system/message requires a protected first surface head"，整个会话打不开。
+    // 这里在构建阶段就把孤儿丢掉：surface 已经有内容、又没建立 protectedHead 的 system/message 一律不要。
+    const SURFACE_KINDS = new Set(["user/message", "assistant/message", "tool/result", "system/message", "developer/message"]);
+    if (clone.type === "system/message") {
+      if (surfaceSeen > 0 && protectedHeadFound === false) {
+        warnings.push(`seq ${row.obj.seq} 的 system/message 失去了受保护头（最初的系统提示已被删），已丢弃（运行时下次请求会重建）`);
+        continue;
+      }
+      if (surfaceSeen === 0) protectedHeadFound = true;
+      surfaceSeen += 1;
+    } else if (SURFACE_KINDS.has(clone.type)) {
+      surfaceSeen += 1;
     }
     keptEvents.push(clone);
   }
