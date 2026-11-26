@@ -114,6 +114,7 @@ node tools/dsh-prune.mjs export <id> --out x.jsonl  # 导出明文事件流
 - **孤儿 inbox splice**（1.0.2）：剪枝删掉了「把消息塞进待处理队列」的事件，却留下「从队列里删消息」的 `agent/inbox/spliced`，重放时 `start + removedCount` 越界，加载器抛 `invalid persisted inbox splice at session seq N`，会话打不开（而 seq/turn/step/tool 配对全绿）。现在剪枝会按顺序重放 inbox、把越界 splice 收敛成合法范围，并把残留的待处理输入一并清空（那些多是被删轮次里没跑完的定时提醒）。
 - **会话内 spawn 的重启器会被一起杀掉**（1.0.2）：从会话里 `spawn` 出去的 powershell 仍挂在 Electron 的 job object 里，剪枝进程一退、job 关闭就被带走，重启日志只写到 `STEP 1c` 就断，DSH 其实没重启。现在改由 WMI（`Win32_Process.Create`）创建重启进程，父进程是 `WmiPrvSE`，杀树带不走它。
 - **投影缓存里的旧游标会把文件写坏**（1.0.3）：`~/.dsh/storages/session_projcache/sessions/<id>.json` 记着上次折叠到哪条事件（`contextHeaders.seq`）。剪枝把 seq 重编号之后，DSH 若带着旧游标续写，新事件会按旧编号接在文件尾部，立刻变成「新编号 + 旧编号」两截，加载器报 `seq gap`。现在剪完自动作废该会话的投影缓存（下次打开自动重建，标题短暂显示「未命名」属正常）。
+- **DSH 还在跑的时候剪枝，必然写坏**（1.0.5）：活会话内存里拿着旧的 `lastSeq`，剪完它会接着按旧编号追加，文件立刻两截。2026-11-26 同一个会话连坏三次都是这个原因。现在 `prune` 写盘前先查 `DeepSeek Harness.exe` 是否在跑，在跑就直接拒绝写盘（原文件一个字节不动），只提示改用「排重启 → 先停 DSH → 再剪 → 再拉起」；确实需要在运行中剪再加 `--force-live`。
 
 ---
 

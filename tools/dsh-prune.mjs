@@ -36,7 +36,7 @@ import {
 } from "node:fs";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 
 const DEFAULT_ROOT = join(homedir(), ".dsh", "sessions");
 // 会话日志的代际文件名：session.v4.jsonl.zstd。读目录时按这个正则识别。
@@ -857,6 +857,16 @@ async function cmdPrune() {
     return;
   }
 
+  // 保险闸：DSH 还活着时绝不写盘（活会话会按旧编号续写，文件必断成两截）。
+  if (!has("--force-live") && isDshRunning()) {
+    console.log("\n✗ 检测到 DSH 正在运行，拒绝写盘（原文件没动）。");
+    console.log("  活进程会在剪完后按旧编号续写，文件必断成两截。");
+    console.log("  请用：restart-dsh.ps1 -Force -PruneSession <会话id> -PruneArgs \"--drop ...\"（先停、再剪、再拉起）");
+    console.log("  或先关掉 DSH 再跑本命令；确实要在运行中剪就加 --force-live。");
+    process.exitCode = 3;
+    return;
+  }
+
   // 备份
   const stamp = new Date().toISOString().replace(/[-:]/g, "").replace(/\..*/, "");
   const backup = `${found.log}.prune-bak-${stamp}`;
@@ -958,6 +968,20 @@ async function cmdPrune() {
   } else {
     console.log("\n下一步：回到 GUI 重新打开这个会话看看；不对就跑 restore 回滚。");
     console.log("重要：如果这个会话刚才在 GUI 里还开着，先把窗口切走再操作，否则活会话会把旧历史 flush 回来。加 --restart 可以让脚本自己处理这一步。");
+  }
+}
+
+/** DSH 是否正在运行。 */
+function isDshRunning() {
+  try {
+    const out = spawnSync("tasklist.exe", ["/FI", "IMAGENAME eq DeepSeek Harness.exe", "/NH"], {
+      encoding: "utf8",
+      windowsHide: true,
+      timeout: 15_000,
+    });
+    return /DeepSeek Harness\.exe/i.test(out.stdout || "");
+  } catch {
+    return false;
   }
 }
 
