@@ -32,7 +32,7 @@
 import { zstdDecompressSync, zstdCompressSync, constants as zconstants } from "node:zlib";
 import {
   readFileSync, writeFileSync, renameSync, copyFileSync, readdirSync,
-  statSync, existsSync, openSync, closeSync, readSync,
+  statSync, existsSync, unlinkSync, openSync, closeSync, readSync,
 } from "node:fs";
 import { join, basename } from "node:path";
 import { homedir } from "node:os";
@@ -916,6 +916,19 @@ async function cmdPrune() {
 
   console.log(`\n已写入 ${found.log}`);
   console.log(`备份   ${backup}`);
+
+  // 投影缓存里记着旧游标（contextHeaders.seq / title.seq 等）。剪完必须作废，否则 DSH
+  // 带着旧游标续写，会把新事件按旧编号接在重编号过的新历史后面，文件立刻变成
+  // 「新编号 + 旧编号」两截，加载器报 seq gap（2026-11-26 e13b4896 就是这么坏的）。
+  try {
+    const cacheFile = join(homedir(), ".dsh", "storages", "session_projcache", "sessions", `${header.id}.json`);
+    if (existsSync(cacheFile)) {
+      unlinkSync(cacheFile);
+      console.log("投影缓存 已作废（重新打开会话时 DSH 会自动重建，标题短暂显示为未命名属正常）");
+    }
+  } catch (error) {
+    console.log(`投影缓存 作废失败（不影响剪枝结果）：${error.message}`);
+  }
 
   // --restart：写盘后自动重启 DSH。必须重启一次，否则活会话会把内存里的旧历史
   // flush 回文件，把刚剪好的结果盖掉（2026-11-23 EDA 会话就是这样被提醒的）。
